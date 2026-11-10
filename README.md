@@ -1,18 +1,29 @@
-![https://avatars.githubusercontent.com/u/195753706?s=96&v=4](https://avatars.githubusercontent.com/u/195753706?s=96&v=4)
+# ESPAsyncTCP
 
-# ESPAsyncTCP 
+ESP8266 maintenance fork of [ESP32Async/ESPAsyncTCP v2.0.0](https://github.com/ESP32Async/ESPAsyncTCP/tree/v2.0.0).
+The original authors and LGPL license are preserved.
 
-Project moved to [ESP32Async](https://github.com/ESP32Async) organization at [https://github.com/ESP32Async/ESPAsyncTCP](https://github.com/ESP32Async/ESPAsyncTCP)
+Version 2.0.1 fixes client destruction during `abort()`, accepted-byte reporting after output failures, empty-output polling, and retry/timeout handling for queued TCP output. Public method signatures and zero-copy defaults are unchanged.
 
-Discord Server: [https://discord.gg/X7zpGdyUcY](https://discord.gg/X7zpGdyUcY)
+Use this repository in PlatformIO `lib_deps` and pin a tested full commit SHA for reproducible firmware builds:
 
-Please see the new links:
+```ini
+lib_deps =
+  https://github.com/labodj/ESPAsyncTCP.git
+```
 
-- `ESP32Async/ESPAsyncWebServer @ 3.6.0` (ESP32, ESP8266, RP2040)
-- `ESP32Async/AsyncTCP @ 3.3.2` (ESP32)
-- `ESP32Async/ESPAsyncTCP @ 2.0.0` (ESP8266)
-- `https://github.com/ESP32Async/AsyncTCPSock/archive/refs/tags/v1.0.3-dev.zip` (AsyncTCP alternative for ESP32)
-- `khoih-prog/AsyncTCP_RP2040W @ 1.2.0` (RP2040)
+## Verification
+
+The native regression suite executes production method definitions against a controllable lwIP test double. It covers callback destruction, zero-byte output, accepted writes, full send queues, temporary output failures, persistent failure timeouts and clock rollover:
+
+```sh
+python3 -m unittest discover -s tests -v
+CXX=clang++ python3 -m unittest discover -s tests -v
+```
+
+The tests use GCC or Clang with AddressSanitizer and UBSan. They test TCP contracts, not the radio or an emulated lwIP stack. CI also compiles all three included examples with ESP8266 Arduino core 3.1.2. With PlatformIO installed, `pio run -e esp8266` builds the server example; set `PLATFORMIO_SRC_DIR` to either other example directory to build it.
+
+The inherited axTLS backend is disabled by default and is not covered by this maintenance work.
 
 ### Async TCP Library for ESP8266 Arduino
 

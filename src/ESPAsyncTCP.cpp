@@ -345,9 +345,11 @@ void AsyncClient::abort(){
   // 6) Callbacks to _recv() or _connected() with err set, will result in _pcb
   //    set to NULL. Thus, preventing possible calls later to tcp_abort().
   if(_pcb) {
-    tcp_abort(_pcb);
+    // tcp_abort synchronously invokes callbacks that may delete this client.
+    tcp_pcb* pcb = _pcb;
     _pcb = NULL;
     setCloseError(ERR_ABRT);
+    tcp_abort(pcb);
   }
   return;
 }
@@ -384,8 +386,9 @@ size_t AsyncClient::write(const char* data) {
 size_t AsyncClient::write(const char* data, size_t size, uint8_t apiflags) {
   size_t will_send = add(data, size, apiflags);
 
-  if(!will_send || !send())
+  if(!will_send)
     return 0;
+  send();  // Acceptance by tcp_write, not immediate output, determines the byte count.
   return will_send;
 }
 
@@ -423,13 +426,17 @@ bool AsyncClient::send(){
 #endif
   err_t err = tcp_output(_pcb);
   if(err == ERR_OK){
-    _pcb_busy = true;
-    _pcb_sent_at = millis();
+    _tx_output_pending = false;
+    // An empty output has no future ACK: leave polling able to retry.
+    _pcb_busy = (_tx_unacked_len != 0);
+    if (_pcb_busy) _pcb_sent_at = millis();
     return true;
   }
 
+  if (!_tx_output_pending) _pcb_sent_at = millis();
+  _tx_output_pending = true;
   ASYNC_TCP_DEBUG("send[%u]: tcp_output() returned err: %s(%ld)", getConnectionId(), errorToString(err), err);
-  return false;
+  return err == ERR_MEM;  // Queued data will be retried by poll().
 }
 
 size_t AsyncClient::ack(size_t len){
@@ -671,8 +678,15 @@ void AsyncClient::_poll(std::shared_ptr<ACErrorTracker>& errorTracker, tcp_pcb* 
   }
   uint32_t now = millis();
 
-  // ACK Timeout
-  if(_pcb_busy && _ack_timeout && (now - _pcb_sent_at) >= _ack_timeout){
+  // A full send queue cannot pass canSend(); retry output independently.
+  if (_tx_output_pending) {
+    send();
+    if (!errorTracker->hasClient()) return;
+    now = millis();
+  }
+
+  // ACK Timeout also bounds persistent output failures.
+  if((_pcb_busy || _tx_output_pending) && _ack_timeout && (now - _pcb_sent_at) >= _ack_timeout){
     _pcb_busy = false;
     if(_timeout_cb)
       _timeout_cb(_timeout_cb_arg, this, (now - _pcb_sent_at));

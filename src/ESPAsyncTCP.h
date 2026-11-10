@@ -127,6 +127,7 @@ class AsyncClient {
     AcConnectHandler _poll_cb;
     void* _poll_cb_arg;
     bool _pcb_busy;
+    bool _tx_output_pending = false;
 #if ASYNC_TCP_SSL_ENABLED
     bool _pcb_secure;
     bool _handshake_done;
