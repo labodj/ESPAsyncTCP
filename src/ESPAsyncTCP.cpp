@@ -347,9 +347,13 @@ void AsyncClient::abort(){
   if(_pcb) {
     // tcp_abort synchronously invokes callbacks that may delete this client.
     tcp_pcb* pcb = _pcb;
+    auto errorTracker = getACErrorTracker();
     _pcb = NULL;
     setCloseError(ERR_ABRT);
     tcp_abort(pcb);
+    // The synchronous error callback may destroy this client and mark the tracker errored.
+    errorTracker->_errored = EE_OK;
+    errorTracker->_close_error = ERR_ABRT;
   }
   return;
 }

@@ -35,9 +35,13 @@ err_t tcp_write(tcp_pcb *pcb,const void *data,size_t length,uint8_t){
   if(writeError!=ERR_OK)return writeError;
   ++pcb->writes;pcb->queued.append(static_cast<const char*>(data),length);return ERR_OK;
 }
+enum{EE_OK,EE_ERROR_CB,EE_ABORTED};
 struct ACErrorTracker{
+ int _errored=EE_OK;err_t _close_error=ERR_OK;
+ void setErrored(int event){if(_errored==EE_OK)_errored=event;}
+ err_t getCallbackCloseError(void);
   bool present=true;err_t error=0;
-  void setCloseError(err_t value){error=value;}
+  void setCloseError(err_t value){error=value;_close_error=value;}
   bool hasClient()const{return present;}
 };
 struct AsyncClient{
@@ -49,6 +53,7 @@ struct AsyncClient{
   std::function<void(void*,AsyncClient*,uint32_t)>_timeout_cb;
   std::function<void(void*,AsyncClient*)>_poll_cb;
   void *_timeout_cb_arg=nullptr,*_poll_cb_arg=nullptr;
+  std::shared_ptr<ACErrorTracker> getACErrorTracker(){return tracker;}
   ~AsyncClient(){tracker->present=false;}
   void setCloseError(err_t value){tracker->error=value;}
   size_t space()const{return capacity-_tx_unacked_len;}
@@ -64,10 +69,11 @@ bool detached=false,marked=false;
 void tcp_abort(tcp_pcb *pcb){
   assert(pcb);++abortCalls;
   detached=active->_pcb==nullptr;marked=active->tracker->error==ERR_ABRT;
-  delete active;active=nullptr;
+  active->tracker->_errored=EE_ERROR_CB;delete active;active=nullptr;
 }
 """
 SOURCE = FIXTURE + "\n".join(method(signature) for signature in (
+    "err_t ACErrorTracker::getCallbackCloseError(void)",
     "void AsyncClient::abort()",
     "size_t AsyncClient::add(const char* data, size_t size, uint8_t apiflags)",
     "size_t AsyncClient::write(const char* data, size_t size, uint8_t apiflags)",
@@ -80,6 +86,8 @@ int main(int argc,char **argv){
   if(scenario=="abort"){
     active=new AsyncClient;auto tracker=active->tracker;active->abort();
     assert(!active&&abortCalls==1&&detached&&marked&&!tracker->present);
+    assert(tracker->getCallbackCloseError()==ERR_ABRT);
+    assert(tracker->getCallbackCloseError()==ERR_OK);
     AsyncClient empty;empty._pcb=nullptr;empty.abort();assert(abortCalls==1);
     return 0;
   }
